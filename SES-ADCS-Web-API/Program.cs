@@ -1,4 +1,5 @@
 using Carter;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using NLog;
 using System.ComponentModel;
 using System.Security.Cryptography.X509Certificates;
@@ -24,10 +25,10 @@ class Program : ServiceControl
 
     public bool Start(HostControl hostControl)
     {
+        logger.Info("SES ADCS Web API service started.");
         thread = new BackgroundWorker();
         thread.DoWork += RunMain;
-        thread.RunWorkerAsync();
-        logger.Info("SES ADCS Web API service started.");        
+        thread.RunWorkerAsync();        
         return true;
     }
 
@@ -35,7 +36,10 @@ class Program : ServiceControl
     {
         var builder = WebApplication.CreateBuilder();
 
-        string certThumbprint = builder.Configuration["Kestrel:Certificates:Default:Thumbprint"];
+        //string certThumbprint = builder.Configuration["Kestrel:Certificates:Default:Thumbprint"];
+        var pfxPath = builder.Configuration["Kestrel:Certificates:Default:PfxPath"];
+        var pfxPass = builder.Configuration["Kestrel:Certificates:Default:PfxPass"];
+        var cert = new X509Certificate2(pfxPath, pfxPass);
         int port = int.Parse(builder.Configuration["Kestrel:Certificates:Default:Port"]);
 
         logger.Info("Starting web server.");
@@ -49,19 +53,7 @@ class Program : ServiceControl
         {
             options.ListenAnyIP(port, listenOptions =>
             {
-                listenOptions.UseHttps(httpsOptions =>
-                {
-                    httpsOptions.ServerCertificateSelector = (context, name) =>
-                    {
-                        // Find the certificate in the Local Machine store
-                        using var store = new X509Store(StoreName.My, StoreLocation.LocalMachine);
-                        store.Open(OpenFlags.ReadOnly);
-                        var certs = store.Certificates.Find(X509FindType.FindByThumbprint, certThumbprint, validOnly: false);
-
-                        // Use the first certificate found (ensure there’s only one or filter specifically)
-                        return certs.Count > 0 ? certs[0] : null;
-                    };
-                });
+                listenOptions.UseHttps(cert);
             });
         });
         builder.Services.AddCarter();
@@ -72,9 +64,9 @@ class Program : ServiceControl
 
         app.MapCarter();
 
-        app.Run();
+        logger.Info($"Web server started. Listening on port: {port} with HTTPS certificate path: {pfxPath}");
 
-        logger.Info($"Web server started. Listening on port: {port} with HTTPS certificate thumbprint: {certThumbprint}");
+        app.Run();
     }
 
     public bool Stop(HostControl hostControl)
@@ -85,3 +77,18 @@ class Program : ServiceControl
         return true;
     }
 }
+
+//string certThumbprint = builder.Configuration["Kestrel:Certificates:Default:Thumbprint"];
+//listenOptions.UseHttps(httpsOptions =>
+//{
+//    httpsOptions.ServerCertificateSelector = (context, name) =>
+//    {
+//        // Find the certificate in the Local Machine store
+//        using var store = new X509Store(StoreName.My, StoreLocation.LocalMachine);
+//        store.Open(OpenFlags.ReadOnly);
+//        var certs = store.Certificates.Find(X509FindType.FindByThumbprint, certThumbprint, validOnly: false);
+
+//        // Use the first certificate found (ensure there’s only one or filter specifically)
+//        return certs.Count > 0 ? certs[0] : null;
+//    };
+//});
